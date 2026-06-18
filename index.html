@@ -24954,7 +24954,7 @@ let _cacheRES = null;
 let _cacheREG = null;
 let _cacheSTK = null;
 
-async function leerRES() {
+async async function leerRES() {
   if (_cacheRES) return _cacheRES;
   try { const r = await get('getPanResidentes'); _cacheRES = Array.isArray(r) ? r : []; return _cacheRES; } catch(e){ return []; }
 }
