@@ -24928,7 +24928,7 @@ function irPanales() {
   }
   renderRegistro();
   renderResidentes();
-  renderStock();
+  panRenderStock();
 }
 
 function panIrTab(tab, btn) {
@@ -24937,23 +24937,31 @@ function panIrTab(tab, btn) {
   const el = document.getElementById('pan-'+tab);
   if (el) el.classList.add('active');
   if (btn) btn.classList.add('active');
-  if (tab==='stock') renderStock();
+  if (tab==='stock') panRenderStock();
   if (tab==='residentes') renderResidentes();
 }
 
 // ======================================================
 // STORAGE LOCAL
 // ======================================================
-const KEY_RES  = 'pan_residentes';
-const KEY_REG  = 'pan_registros';
-const KEY_STK  = 'pan_stock_ent';
+// Pañales — datos en Google Sheets
+let _cacheRES = null;
+let _cacheREG = null;
+let _cacheSTK = null;
 
-function leerRES()  { try { return JSON.parse(localStorage.getItem(KEY_RES)||'[]'); } catch(e){ return []; } }
-function leerREG()  { try { return JSON.parse(localStorage.getItem(KEY_REG)||'[]'); } catch(e){ return []; } }
-function leerSTK()  { try { return JSON.parse(localStorage.getItem(KEY_STK)||'[]'); } catch(e){ return []; } }
-function guardarRES(d)  { localStorage.setItem(KEY_RES, JSON.stringify(d)); }
-function guardarREG(d)  { localStorage.setItem(KEY_REG, JSON.stringify(d)); }
-function guardarSTK(d)  { localStorage.setItem(KEY_STK, JSON.stringify(d)); }
+async function leerRES() {
+  if (_cacheRES) return _cacheRES;
+  try { _cacheRES = await get('getPanResidentes'); return _cacheRES || []; } catch(e){ return []; }
+}
+async function leerREG() {
+  if (_cacheREG) return _cacheREG;
+  try { _cacheREG = await get('getPanRegistros'); return _cacheREG || []; } catch(e){ return []; }
+}
+async function leerSTK() {
+  if (_cacheSTK) return _cacheSTK;
+  try { _cacheSTK = await get('getPanStock'); return _cacheSTK || []; } catch(e){ return []; }
+}
+function invalidarCachePan() { _cacheRES = null; _cacheREG = null; _cacheSTK = null; }
 function uid() { return Date.now().toString(36) + Math.random().toString(36).slice(2,6); }
 function hoy() { return new Date().toISOString().slice(0,10); }
 
@@ -24982,13 +24990,13 @@ function regMesSig() {
   regMes = sig; renderRegistro();
 }
 
-function renderRegistro() {
+async function renderRegistro() {
   const mesKey = regMes.toISOString().slice(0,7);
   document.getElementById('regMesTitulo').textContent =
     regMes.toLocaleDateString('es-UY',{month:'long',year:'numeric'}).replace(/^./,c=>c.toUpperCase());
 
-  const residentes = leerRES().filter(r => !r.baja);
-  const registros  = leerREG();
+  const residentes = (await leerRES()).filter(r => !r.baja);
+  const registros  = await leerREG();
   const cont = document.getElementById('regLista');
 
   if (!residentes.length) {
@@ -25044,29 +25052,27 @@ function renderRegistro() {
   }).join('');
 }
 
-function toggleDia(resId, fecha) {
-  let registros = leerREG();
-  const existe = registros.find(r => r.resId===resId && r.fecha===fecha);
+async function toggleDia(resId, fecha) {
+  const registros = await leerREG();
+  const existe = registros.find(r => String(r.resId)===String(resId) && r.fecha===fecha);
   if (existe) {
-    registros = registros.filter(r => !(r.resId===resId && r.fecha===fecha));
-    // Devolver al stock
-    const res = leerRES().find(r => r.id===resId);
-    if (res) devolverStock(res.talle, res.marca);
+    await post({ action: 'panEliminarRegistro', id: existe.id });
+    const res = (await leerRES()).find(r => String(r.id)===String(resId));
+    if (res && res.talle && res.marca) await post({ action: 'panDescontarStock', talle: res.talle, marca: res.marca });
   } else {
-    registros.push({ id:uid(), resId, fecha });
-    // Descontar del stock
-    const res = leerRES().find(r => r.id===resId);
-    if (res) descontarStock(res.talle, res.marca);
+    const r = await post({ action: 'panAgregarRegistro', resId, fecha });
+    const res = (await leerRES()).find(r => String(r.id)===String(resId));
+    if (res && res.talle && res.marca) await post({ action: 'panDescontarStock', talle: res.talle, marca: res.marca });
   }
-  guardarREG(registros);
+  invalidarCachePan();
   renderRegistro();
 }
 
 // ======================================================
 // RESIDENTES
 // ======================================================
-function renderResidentes() {
-  const todos   = leerRES();
+async function renderResidentes() {
+  const todos   = await leerRES();
   const activos = todos.filter(r => !r.baja);
   const bajas   = todos.filter(r => r.baja);
 
@@ -25098,22 +25104,24 @@ function guardarResidente() {
   const marca    = document.getElementById('resMarca').value.trim();
   const asignados = parseInt(document.getElementById('resAsignados').value)||0;
   if (!nombre) { mostrarMsg('resMsg','Ingresá el nombre.','err'); return; }
-  let todos = leerRES();
   if (id) {
-    todos = todos.map(r => r.id===id ? {...r,nombre,talle,marca,asignados} : r);
-    mostrarMsg('resMsg','Residente actualizado.','ok');
+    const r = await post({ action: 'panEditarResidente', id, nombre, talle, marca, asignados });
+    if (r.ok) mostrarMsg('resMsg','Residente actualizado.','ok');
+    else { mostrarMsg('resMsg','Error al guardar.','err'); return; }
   } else {
-    todos.push({ id:uid(), nombre, talle, marca, asignados, baja:false });
-    mostrarMsg('resMsg','Residente agregado.','ok');
+    const r = await post({ action: 'panAgregarResidente', nombre, talle, marca, asignados });
+    if (r.ok) mostrarMsg('resMsg','Residente agregado.','ok');
+    else { mostrarMsg('resMsg','Error al guardar.','err'); return; }
   }
-  guardarRES(todos);
+  invalidarCachePan();
   cancelarResidente();
   renderResidentes();
   renderRegistro();
 }
 
-function editarResidente(id) {
-  const r = leerRES().find(x=>x.id===id); if (!r) return;
+async function editarResidente(id) {
+  const todos = await leerRES();
+  const r = todos.find(x=>String(x.id)===String(id)); if (!r) return;
   document.getElementById('resId').value = r.id;
   document.getElementById('resNombre').value = r.nombre;
   document.getElementById('resTalle').value = r.talle||'';
@@ -25132,11 +25140,13 @@ function cancelarResidente() {
   document.getElementById('resTitulo').textContent='Agregar residente';
 }
 
-function panToggleBaja(id, darBaja) {
-  const r = leerRES().find(x=>x.id===id); if (!r) return;
+async function panToggleBaja(id, darBaja) {
+  const todos = await leerRES();
+  const r = todos.find(x=>String(x.id)===String(id)); if (!r) return;
   if (!confirm(darBaja?`¿Dar de baja a "${r.nombre}"?`:`¿Reactivar a "${r.nombre}"?`)) return;
-  const todos = leerRES().map(x => x.id===id ? {...x,baja:darBaja} : x);
-  guardarRES(todos);
+  await post({ action: 'panEditarResidente', id: String(id), baja: darBaja?'1':'0',
+    nombre:r.nombre, talle:r.talle, marca:r.marca, asignados:r.asignados });
+  invalidarCachePan();
   renderResidentes();
   renderRegistro();
 }
@@ -25144,10 +25154,10 @@ function panToggleBaja(id, darBaja) {
 // ======================================================
 // STOCK
 // ======================================================
-function calcularStockActual() {
-  const entradas = leerSTK();
-  const registros = leerREG();
-  const residentes = leerRES();
+async function calcularStockActual() {
+  const entradas = await leerSTK();
+  const registros = await leerREG();
+  const residentes = await leerRES();
   const stock = {};
   entradas.forEach(e => {
     const k = `${e.talle}|${e.marca}`;
@@ -25175,17 +25185,17 @@ function guardarEntradaStock() {
   if (!talle||!marca) { mostrarMsg('stMsg','Ingresá talle y marca.','err'); return; }
   if (!cant||cant<=0) { mostrarMsg('stMsg','Ingresá una cantidad válida.','err'); return; }
   if (!fecha) { mostrarMsg('stMsg','Seleccioná la fecha.','err'); return; }
-  const entradas = leerSTK();
-  entradas.push({ id:uid(), talle, marca, cant, fecha, obs });
-  guardarSTK(entradas);
+  const r = await post({ action: 'panEntradaStock', talle, marca, cant, fecha, obs });
+  if (!r.ok) { mostrarMsg('stMsg','Error al registrar.','err'); return; }
   mostrarMsg('stMsg',`✓ Entrada de ${cant} paquetes registrada.`,'ok');
   document.getElementById('stCant').value='';
   document.getElementById('stObs').value='';
-  renderStock();
+  invalidarCachePan();
+  panRenderStock();
 }
 
-function renderStock() {
-  const stock = calcularStockActual();
+async function panRenderStock() {
+  const stock = await calcularStockActual();
   const cont = document.getElementById('stResumen'); if (!cont) return;
   if (!stock.length) { cont.innerHTML='<div class="empty" style="margin-top:12px;">No hay stock registrado.</div>'; return; }
   const items = stock.sort((a,b)=>a.talle.localeCompare(b.talle));
@@ -25204,14 +25214,14 @@ function renderStock() {
 // ======================================================
 // ESTADÍSTICAS
 // ======================================================
-function renderEstadisticas() {
+async function renderEstadisticas() {
   const desde = document.getElementById('estaDesde').value;
   const hasta = document.getElementById('estaHasta').value;
   if (!desde||!hasta) { alert('Seleccioná el rango de fechas.'); return; }
   if (desde>hasta) { alert('La fecha Desde no puede ser mayor que Hasta.'); return; }
 
-  const registros  = leerREG().filter(r => r.fecha>=desde && r.fecha<=hasta);
-  const residentes = leerRES().filter(r => !r.baja);
+  const registros  = (await leerREG()).filter(r => r.fecha>=desde && r.fecha<=hasta);
+  const residentes = (await leerRES()).filter(r => !r.baja);
   const cont = document.getElementById('estaContenido');
 
   if (!registros.length) { cont.innerHTML='<div class="empty">No hay registros en ese período.</div>'; return; }
@@ -25247,7 +25257,7 @@ function renderEstadisticas() {
   while (cur<=fin) { meses.push(cur.toISOString().slice(0,7)); cur=new Date(cur.getFullYear(),cur.getMonth()+1,1); }
 
   const tendencia = residentes.map(r => {
-    const porMes = meses.map(m => registros.filter(x=>x.resId===r.id&&x.fecha.startsWith(m)).length);
+    const porMes = meses.map(m => registros.filter(x=>String(x.resId)===String(r.id)&&x.fecha.startsWith(m)).length);
     const total = porMes.reduce((s,n)=>s+n,0);
     if (!total) return null;
     const promedio = total/meses.length;
@@ -25303,13 +25313,13 @@ function renderEstadisticas() {
 // ======================================================
 // INFORME EXCEL
 // ======================================================
-function generarExcel() {
+async function generarExcel() {
   const desde = document.getElementById('infDesde').value;
   const hasta = document.getElementById('infHasta').value;
   if (!desde||!hasta) { alert('Seleccioná el rango de fechas.'); return; }
 
-  const registros  = leerREG().filter(r => r.fecha>=desde && r.fecha<=hasta);
-  const residentes = leerRES();
+  const registros  = (await leerREG()).filter(r => r.fecha>=desde && r.fecha<=hasta);
+  const residentes = await leerRES();
   const fechaHoy   = new Date().toLocaleDateString('es-UY');
 
   // Meses en rango
