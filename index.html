@@ -378,8 +378,7 @@ input:focus, select:focus { outline: none; border-color: #2c5f2e; }
         <option value="activo">Solo activos</option>
         <option value="baja">Solo dados de baja</option>
         <option value="todos">Todos</option>
-      </select>
-    </div>
+      </select>    </div>
     <div id="prodLoading" class="loading">Cargando...</div>
     <table id="tablaProductos" style="display:none">
       <thead><tr><th>Nombre</th><th>Categoría</th><th>Proveedor</th><th>Unidad</th><th>Mínimo</th><th>Stock</th><th>Acciones</th></tr></thead>
@@ -1085,15 +1084,23 @@ async function confirmarAjuste() {
 }
 
 async function toggleBaja(id, darDeBaja) {
-  const p = productos.find(x => x.id == id);
-  if (!p) return;
+  // Recargar productos si el array está vacío
+  if (!productos || productos.length === 0) {
+    productos = await get('getProductos');
+  }
+  const p = productos.find(x => String(x.id) === String(id));
+  if (!p) {
+    alert('No se encontró el producto. Recargá la página.');
+    return;
+  }
   const msg = darDeBaja
     ? `¿Dar de baja a "${p.nombre}"? El historial se conserva y podés reactivarlo después.`
     : `¿Reactivar "${p.nombre}"?`;
   if (!confirm(msg)) return;
-  const r = await post({ action: 'editarProducto', id, baja: darDeBaja ? '1' : '0',
+  const r = await post({ action: 'editarProducto', id: String(id), baja: darDeBaja ? '1' : '0',
     nombre: p.nombre, unidad: p.unidad, minimo: p.minimo, categoria: p.categoria, proveedor: p.proveedor || '' });
   if (r.ok) { cargarProductos(); }
+  else { alert('Error al guardar. Intentá de nuevo.'); }
 }
 
 async function registrarEntrada() {
