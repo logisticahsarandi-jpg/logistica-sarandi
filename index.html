@@ -24951,15 +24951,15 @@ let _cacheSTK = null;
 
 async function leerRES() {
   if (_cacheRES) return _cacheRES;
-  try { _cacheRES = await get('getPanResidentes'); return _cacheRES || []; } catch(e){ return []; }
+  try { const r = await get('getPanResidentes'); _cacheRES = Array.isArray(r) ? r : []; return _cacheRES; } catch(e){ return []; }
 }
 async function leerREG() {
   if (_cacheREG) return _cacheREG;
-  try { _cacheREG = await get('getPanRegistros'); return _cacheREG || []; } catch(e){ return []; }
+  try { const r = await get('getPanRegistros'); _cacheREG = Array.isArray(r) ? r : []; return _cacheREG; } catch(e){ return []; }
 }
 async function leerSTK() {
   if (_cacheSTK) return _cacheSTK;
-  try { _cacheSTK = await get('getPanStock'); return _cacheSTK || []; } catch(e){ return []; }
+  try { const r = await get('getPanStock'); _cacheSTK = Array.isArray(r) ? r : []; return _cacheSTK; } catch(e){ return []; }
 }
 function invalidarCachePan() { _cacheRES = null; _cacheREG = null; _cacheSTK = null; }
 function uid() { return Date.now().toString(36) + Math.random().toString(36).slice(2,6); }
