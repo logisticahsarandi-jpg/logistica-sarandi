@@ -25097,7 +25097,7 @@ async function renderResidentes() {
     </div>`;
 }
 
-function guardarResidente() {
+async function guardarResidente() {
   const id       = document.getElementById('resId').value;
   const nombre   = document.getElementById('resNombre').value.trim();
   const talle    = document.getElementById('resTalle').value.trim();
@@ -25176,7 +25176,7 @@ async function calcularStockActual() {
 function descontarStock(talle, marca) { /* calculado en tiempo real */ }
 function devolverStock(talle, marca)  { /* calculado en tiempo real */ }
 
-function guardarEntradaStock() {
+async function guardarEntradaStock() {
   const talle = document.getElementById('stTalle').value.trim();
   const marca = document.getElementById('stMarca').value.trim();
   const cant  = parseInt(document.getElementById('stCant').value);
