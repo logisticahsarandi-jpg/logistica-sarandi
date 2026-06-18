@@ -25072,8 +25072,8 @@ function renderResidentes() {
       <div style="display:flex;gap:6px;">
         <button class="btn secondary" style="padding:4px 10px;font-size:12px;" onclick="editarResidente('${r.id}')">Editar</button>
         ${esBaja
-          ? `<button class="btn secondary" style="padding:4px 10px;font-size:12px;color:#2c5f2e;" onclick="toggleBaja('${r.id}',false)">Reactivar</button>`
-          : `<button class="btn danger" style="padding:4px 10px;font-size:12px;" onclick="toggleBaja('${r.id}',true)">Dar de baja</button>`}
+          ? `<button class="btn secondary" style="padding:4px 10px;font-size:12px;color:#2c5f2e;" onclick="panToggleBaja('${r.id}',false)">Reactivar</button>`
+          : `<button class="btn danger" style="padding:4px 10px;font-size:12px;" onclick="panToggleBaja('${r.id}',true)">Dar de baja</button>`}
       </div>
     </div>`;
 
@@ -25125,7 +25125,7 @@ function cancelarResidente() {
   document.getElementById('resTitulo').textContent='Agregar residente';
 }
 
-function toggleBaja(id, darBaja) {
+function panToggleBaja(id, darBaja) {
   const r = leerRES().find(x=>x.id===id); if (!r) return;
   if (!confirm(darBaja?`¿Dar de baja a "${r.nombre}"?`:`¿Reactivar a "${r.nombre}"?`)) return;
   const todos = leerRES().map(x => x.id===id ? {...x,baja:darBaja} : x);
