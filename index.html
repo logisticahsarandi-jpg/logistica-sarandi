@@ -25176,16 +25176,18 @@ async function calcularStockActual() {
   const registros = await leerREG();
   const residentes = await leerRES();
   const stock = {};
+  // leerSTK devuelve {id, talle, marca, stock} desde PanStock
   entradas.forEach(e => {
     const k = `${e.talle}|${e.marca}`;
-    stock[k] = { talle:e.talle, marca:e.marca, total:(stock[k]?.total||0)+parseInt(e.cant||0) };
+    // 'stock' es el campo del servidor; sumar si hay múltiples filas del mismo talle/marca
+    stock[k] = { id:e.id, talle:e.talle, marca:e.marca, total:(stock[k]?.total||0)+parseInt(e.stock||0) };
   });
   registros.forEach(reg => {
     const res = residentes.find(r=>r.id===reg.resId);
     if (!res) return;
     const k = `${res.talle}|${res.marca}`;
     if (stock[k]) stock[k].total = Math.max(0, stock[k].total-1);
-    else stock[k] = { talle:res.talle, marca:res.marca, total:0 };
+    else stock[k] = { id:null, talle:res.talle, marca:res.marca, total:0 };
   });
   return Object.values(stock);
 }
@@ -25218,14 +25220,29 @@ async function panRenderStock() {
   const items = stock.sort((a,b)=>a.talle.localeCompare(b.talle));
   cont.innerHTML = `<div class="form-card" style="padding:0;overflow:hidden;margin-top:4px;">
     <div style="padding:10px 16px;background:#f5f5f5;border-bottom:1px solid #e0e0e0;font-weight:600;font-size:13px;">Stock actual en depósito</div>
-    <table><thead><tr><th>Talle</th><th>Marca</th><th>Paquetes</th><th>Estado</th></tr></thead>
+    <table><thead><tr><th>Talle</th><th>Marca</th><th>Paquetes</th><th>Estado</th><th></th></tr></thead>
     <tbody>${items.map(i=>{
       const bajo = i.total<=3;
       return `<tr><td>${i.talle}</td><td>${i.marca}</td>
         <td style="font-weight:700;${bajo?'color:#c0392b':''}">${i.total}</td>
-        <td>${bajo?'<span class="badge out">Stock bajo</span>':'<span class="badge ok">OK</span>'}</td></tr>`;
+        <td>${bajo?'<span class="badge out">Stock bajo</span>':'<span class="badge ok">OK</span>'}</td>
+        <td><button class="btn secondary" style="padding:3px 10px;font-size:12px;" onclick="editarStockPan('${i.talle}','${i.marca}',${i.total})">Editar</button></td></tr>`;
     }).join('')}</tbody></table>
   </div>`;
+}
+
+async function editarStockPan(talle, marca, actual) {
+  const nuevo = prompt(`Stock actual de ${talle} / ${marca}: ${actual}\n\nIngresá el nuevo valor de stock:`, actual);
+  if (nuevo === null) return;
+  const val = parseInt(nuevo);
+  if (isNaN(val) || val < 0) { alert('Valor inválido.'); return; }
+  // Registrar una entrada de ajuste (diferencia)
+  const diff = val - actual;
+  if (diff === 0) return;
+  const r = await post({ action: 'panEntradaStock', talle, marca, cant: diff, fecha: hoy(), obs: 'Ajuste manual' });
+  if (!r.ok) { alert('Error al guardar el ajuste.'); return; }
+  invalidarCachePan();
+  panRenderStock();
 }
 
 // ======================================================
