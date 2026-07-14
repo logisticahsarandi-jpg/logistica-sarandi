@@ -24960,7 +24960,15 @@ let _cacheSTK = null;
 
 async function leerRES() {
   if (_cacheRES) return _cacheRES;
-  try { const r = await get('getPanResidentes'); _cacheRES = Array.isArray(r) ? r : []; return _cacheRES; } catch(e){ return []; }
+  try {
+    const r = await get('getPanResidentes');
+    console.log('getPanResidentes respuesta:', JSON.stringify(r));
+    _cacheRES = Array.isArray(r) ? r : [];
+    return _cacheRES;
+  } catch(e) {
+    console.log('getPanResidentes error:', e);
+    return [];
+  }
 }
 async function leerREG() {
   if (_cacheREG) return _cacheREG;
@@ -25004,7 +25012,7 @@ async function renderRegistro() {
   document.getElementById('regMesTitulo').textContent =
     regMes.toLocaleDateString('es-UY',{month:'long',year:'numeric'}).replace(/^./,c=>c.toUpperCase());
 
-  const residentes = (await leerRES()).filter(r => !r.baja);
+  const residentes = (await leerRES()).filter(r => String(r.baja) === '0' || !r.baja);
   const registros  = await leerREG();
   const cont = document.getElementById('regLista');
 
@@ -25082,7 +25090,7 @@ async function toggleDia(resId, fecha) {
 // ======================================================
 async function renderResidentes() {
   const todos   = await leerRES();
-  const activos = todos.filter(r => !r.baja);
+  const activos = todos.filter(r => String(r.baja) === '0' || !r.baja);
   const bajas   = todos.filter(r => r.baja);
 
   const filaHtml = (r, esBaja) => `
@@ -25230,7 +25238,7 @@ async function renderEstadisticas() {
   if (desde>hasta) { alert('La fecha Desde no puede ser mayor que Hasta.'); return; }
 
   const registros  = (await leerREG()).filter(r => r.fecha>=desde && r.fecha<=hasta);
-  const residentes = (await leerRES()).filter(r => !r.baja);
+  const residentes = (await leerRES()).filter(r => String(r.baja) === '0' || !r.baja);
   const cont = document.getElementById('estaContenido');
 
   if (!registros.length) { cont.innerHTML='<div class="empty">No hay registros en ese período.</div>'; return; }
@@ -25337,7 +25345,7 @@ async function generarExcel() {
   const fin = new Date(hasta.slice(0,7)+'-01');
   while (cur<=fin) { meses.push(cur.toISOString().slice(0,7)); cur=new Date(cur.getFullYear(),cur.getMonth()+1,1); }
 
-  const activos = residentes.filter(r => !r.baja);
+  const activos = residentes.filter(r => String(r.baja) === '0' || !r.baja);
 
   let csv = '\uFEFF';
   csv += `El Sarandí Hogar Valdense — Logística\n`;
