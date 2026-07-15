@@ -24554,26 +24554,35 @@ function mandAutosave() {
   mandSaveTimer = setTimeout(function(){ mandGuardarLocal(true); }, 600);
 }
 
-function mandGuardarLocal(silent) {
+async function mandGuardarLocal(silent) {
   const st = document.getElementById('mandSaveStatus');
+  const data = mandGetData();
+  // Respaldo local inmediato por si se corta la conexión
+  try { localStorage.setItem(MAND_KEY, JSON.stringify(data)); } catch (e) {}
   try {
-    const data = mandGetData();
-    localStorage.setItem(MAND_KEY, JSON.stringify(data));
+    await post(Object.assign({ action: 'mandGuardarBorrador' }, data));
     if (st) {
       st.style.color = '#2c5f2e';
       st.textContent = '\u2713 Guardado ' + new Date().toLocaleTimeString('es-UY', {hour:'2-digit', minute:'2-digit'});
     }
   } catch (e) {
-    if (st) { st.style.color = '#c0392b'; st.textContent = 'No se pudo guardar'; }
+    if (st) { st.style.color = '#e67e22'; st.textContent = 'Sin conexión — guardado local, se sincroniza después'; }
   }
 }
 
-function mandCargarLocal() {
+async function mandCargarLocal() {
   mandLoading = true;
   document.getElementById('mandDestinos').innerHTML = '';
   mandDestinoCount = 0;
   let data = null;
-  try { data = JSON.parse(localStorage.getItem(MAND_KEY) || 'null'); } catch (e) { data = null; }
+  try {
+    const r = await fetch(APPS_URL + '?action=mandLeerBorrador');
+    if (!r.ok) throw new Error('red');
+    data = await r.json();
+  } catch (e) {
+    // Sin conexión: usar el último respaldo guardado en este navegador
+    try { data = JSON.parse(localStorage.getItem(MAND_KEY) || 'null'); } catch (e2) { data = null; }
+  }
   if (data && data.destinos && data.destinos.length) {
     document.getElementById('mandFecha').value = data.fecha || new Date().toISOString().slice(0,10);
     document.getElementById('mandResponsable').value = data.responsable || '';
@@ -24589,13 +24598,14 @@ function mandCargarLocal() {
   mandLoading = false;
 }
 
-function mandLimpiar() {
+async function mandLimpiar() {
   if (!confirm('\u00bfBorrar la lista actual? Esta acci\u00f3n no se puede deshacer.')) return;
   document.getElementById('mandDestinos').innerHTML = '';
   document.getElementById('mandFecha').value = new Date().toISOString().slice(0,10);
   document.getElementById('mandResponsable').value = '';
   mandDestinoCount = 0;
   try { localStorage.removeItem(MAND_KEY); } catch (e) {}
+  try { await post({ action: 'mandBorrarBorrador' }); } catch (e) {}
   mandAddDestino();
   const st = document.getElementById('mandSaveStatus');
   if (st) st.textContent = '';
@@ -24824,25 +24834,41 @@ function fyvBajarWord(dest) {
   document.body.appendChild(a); a.click(); document.body.removeChild(a);
 }
 
-function fyvLeerSemanas() { try { return JSON.parse(localStorage.getItem(FYV_KEY) || '[]'); } catch(e){ return []; } }
-function fyvEscribirSemanas(arr) { localStorage.setItem(FYV_KEY, JSON.stringify(arr)); }
+// Trae las semanas desde Google Sheets; si falla la red, usa el último respaldo local
+async function fyvListarSemanasNube() {
+  try {
+    const r = await fetch(APPS_URL + '?action=fyvListarSemanas');
+    if (!r.ok) throw new Error('red');
+    const data = await r.json();
+    try { localStorage.setItem(FYV_KEY, JSON.stringify(data)); } catch (e) {}
+    return data;
+  } catch (e) {
+    try { return JSON.parse(localStorage.getItem(FYV_KEY) || '[]'); } catch (e2) { return []; }
+  }
+}
 
-function fyvGuardarSemana() {
+async function fyvGuardarSemana() {
   fyvCalcular();
   const semana = {
     fecha: document.getElementById('fyvFecha').value,
     provA: document.getElementById('fyvProvA').value,
     provB: document.getElementById('fyvProvB').value,
     piso: document.getElementById('fyvPiso').value,
-    guardado: new Date().toISOString(),
     items: fyvItems.map(it => ({ nombre: it.nombre, cant: it.cant, pa: it.pa, pb: it.pb, ov: it.ov, dest: it._dest }))
   };
-  const arr = fyvLeerSemanas();
-  arr.push(semana);
-  fyvEscribirSemanas(arr);
   const m = document.getElementById('fyvMsg');
-  m.style.display='block'; m.textContent = '✓ Semana guardada (' + fyvFechaTxt(semana.fecha) + ').';
-  setTimeout(()=>m.style.display='none', 3000);
+  try {
+    await post(Object.assign({ action: 'fyvGuardarSemana' }, semana));
+    m.style.display='block'; m.style.color=''; m.textContent = '✓ Semana guardada (' + fyvFechaTxt(semana.fecha) + ').';
+  } catch (e) {
+    // Respaldo local si falla la red — se puede reintentar guardar más tarde
+    let arr = [];
+    try { arr = JSON.parse(localStorage.getItem(FYV_KEY) || '[]'); } catch (e2) { arr = []; }
+    arr.push(Object.assign({ id: 'local-' + Date.now(), guardado: new Date().toISOString() }, semana));
+    try { localStorage.setItem(FYV_KEY, JSON.stringify(arr)); } catch (e3) {}
+    m.style.display='block'; m.style.color='#e67e22'; m.textContent = 'Sin conexión — guardado local, reintentá más tarde.';
+  }
+  setTimeout(()=>{ m.style.display='none'; m.style.color=''; }, 3000);
 }
 
 function fyvNuevaSemana() {
@@ -24853,24 +24879,25 @@ function fyvNuevaSemana() {
   fyvRecalcular();
 }
 
-function fyvRenderGuardadas() {
-  const arr = fyvLeerSemanas();
+async function fyvRenderGuardadas() {
   const cont = document.getElementById('fyvListaSemanas');
+  cont.innerHTML = '<div class="loading">Cargando semanas...</div>';
+  const arr = await fyvListarSemanasNube();
   if (!arr.length) { cont.innerHTML = '<div class="empty">No hay semanas guardadas todavía.</div>'; return; }
   let html = '<div class="form-card" style="padding:0;overflow:hidden;"><table><tr><th>Fecha</th><th>Proveedores</th><th>Productos</th><th></th></tr>';
-  arr.slice().reverse().forEach((s, ri) => {
-    const realIdx = arr.length - 1 - ri;
+  arr.slice().reverse().forEach(s => {
     const nprod = s.items.filter(i => i.cant > 0).length;
     html += '<tr><td>'+fyvFechaTxt(s.fecha)+'</td><td>'+(s.provA||'A')+' / '+(s.provB||'B')+'</td><td>'+nprod+'</td>'
-      + '<td><button class="btn secondary" style="padding:4px 10px;font-size:12px;margin-right:4px;" onclick="fyvVerSemana('+realIdx+')">Cargar</button>'
-      + '<button class="btn danger" style="padding:4px 10px;font-size:12px;" onclick="fyvBorrarSemana('+realIdx+')">✕</button></td></tr>';
+      + '<td><button class="btn secondary" style="padding:4px 10px;font-size:12px;margin-right:4px;" onclick="fyvVerSemana(\''+s.id+'\')">Cargar</button>'
+      + '<button class="btn danger" style="padding:4px 10px;font-size:12px;" onclick="fyvBorrarSemana(\''+s.id+'\')">✕</button></td></tr>';
   });
   html += '</table></div>';
   cont.innerHTML = html;
 }
 
-function fyvVerSemana(idx) {
-  const arr = fyvLeerSemanas(); const s = arr[idx]; if (!s) return;
+async function fyvVerSemana(id) {
+  const arr = await fyvListarSemanasNube();
+  const s = arr.find(x => String(x.id) === String(id)); if (!s) return;
   document.getElementById('fyvFecha').value = s.fecha;
   document.getElementById('fyvProvA').value = s.provA;
   document.getElementById('fyvProvB').value = s.provB;
@@ -24882,13 +24909,21 @@ function fyvVerSemana(idx) {
   fyvRecalcular();
 }
 
-function fyvBorrarSemana(idx) {
+async function fyvBorrarSemana(id) {
   if (!confirm('¿Borrar esta semana guardada?')) return;
-  const arr = fyvLeerSemanas(); arr.splice(idx,1); fyvEscribirSemanas(arr); fyvRenderGuardadas();
+  try {
+    await post({ action: 'fyvBorrarSemana', id });
+  } catch (e) {
+    alert('No se pudo borrar por falta de conexión. Probá de nuevo.');
+    return;
+  }
+  fyvRenderGuardadas();
 }
 
-function fyvRenderEvolucion() {
-  const arr = fyvLeerSemanas();
+async function fyvRenderEvolucion() {
+  const cont0 = document.getElementById('fyvEvoTabla');
+  cont0.innerHTML = '<div class="loading">Cargando evolución...</div>';
+  const arr = await fyvListarSemanasNube();
   const sel = document.getElementById('fyvEvoProd');
   const nombres = new Set();
   arr.forEach(s => s.items.forEach(i => { if (i.nombre) nombres.add(i.nombre); }));
