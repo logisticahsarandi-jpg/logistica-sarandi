@@ -284,7 +284,7 @@ input:focus, select:focus { outline: none; border-color: #2c5f2e; }
         <div class="card"><div class="label">Proveedores</div><div class="value" id="pedStatProv">—</div></div>
       </div>
       <div class="btn-row" style="margin-bottom:16px;">
-        <button class="btn secondary" onclick="bajarPedidoWord('todos')">Bajar lista completa (Word)</button>
+        <button class="btn secondary" onclick="bajarPedidoExcel('todos')">Bajar lista completa (Excel)</button>
       </div>
       <div id="pedidoGrupos"></div>
     </div>
@@ -462,14 +462,14 @@ input:focus, select:focus { outline: none; border-color: #2c5f2e; }
           <div class="form-card" style="padding:0;overflow:hidden;margin-bottom:8px;">
             <table><tbody id="fyvPedA"></tbody></table>
           </div>
-          <button class="btn secondary" style="font-size:12px;padding:6px 14px;" onclick="fyvBajarWord('a')">Bajar pedido Word</button>
+          <button class="btn secondary" style="font-size:12px;padding:6px 14px;" onclick="fyvBajarExcel('a')">Bajar pedido Excel</button>
         </div>
         <div>
           <h3 id="fyvTitB" style="font-size:14px;color:#2c5f2e;margin:0 0 8px;">Pedido B</h3>
           <div class="form-card" style="padding:0;overflow:hidden;margin-bottom:8px;">
             <table><tbody id="fyvPedB"></tbody></table>
           </div>
-          <button class="btn secondary" style="font-size:12px;padding:6px 14px;" onclick="fyvBajarWord('b')">Bajar pedido Word</button>
+          <button class="btn secondary" style="font-size:12px;padding:6px 14px;" onclick="fyvBajarExcel('b')">Bajar pedido Excel</button>
         </div>
       </div>
 
@@ -865,7 +865,7 @@ async function cargarPedido() {
             <span style="font-weight:600;font-size:14px;color:#2c5f2e;">${prov}</span>
             <span style="font-size:12px;color:#888;margin-left:8px;">${items.length} producto${items.length !== 1 ? 's' : ''}</span>
           </div>
-          <button class="btn secondary" style="padding:5px 12px;font-size:12px;" onclick="bajarPedidoWord('${prov.replace(/'/g,"\\'")}')">Bajar Word</button>
+          <button class="btn secondary" style="padding:5px 12px;font-size:12px;" onclick="bajarPedidoExcel('${prov.replace(/'/g,"\\'")}')">Bajar Excel</button>
         </div>
         <table>
           <thead><tr><th>Producto</th><th>Unidad</th><th>Stock actual</th><th>Mínimo</th><th>Estado</th></tr></thead>
@@ -877,7 +877,7 @@ async function cargarPedido() {
   document.getElementById('pedidoContenido').style.display = 'block';
 }
 
-function bajarPedidoWord(prov) {
+function bajarPedidoExcel(prov) {
   const activos = productos.filter(p => !(p.baja == '1' || p.baja === true));
   const lista = activos.filter(p => estadoKey(p.stock, p.minimo) !== 'ok');
   const items = prov === 'todos' ? lista : lista.filter(p => (p.proveedor || 'Sin proveedor asignado') === prov);
@@ -896,34 +896,26 @@ function bajarPedidoWord(prov) {
       grupos[pr].push(p);
     });
     Object.keys(grupos).sort().forEach(pr => {
-      cuerpo += `<h3 style="color:#2c5f2e;margin-top:20px;">${pr}</h3>`;
-      cuerpo += tablaWord(grupos[pr]);
+      cuerpo += `<tr><td colspan="6" style="background:#2c5f2e;color:#fff;font-weight:bold;padding:6px;">${pr}</td></tr>`;
+      cuerpo += filasExcel(grupos[pr]);
     });
   } else {
-    cuerpo = tablaWord(items);
+    cuerpo = filasExcel(items);
   }
 
-  const html = `<html xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:w="urn:schemas-microsoft-com:office:word">
-    <head><meta charset="utf-8"></head>
-    <body style="font-family:Arial;font-size:12pt;">
-      <h2 style="color:#2c5f2e;">El Sarandí — Hogar Valdense</h2>
-      <h3>${titulo}</h3>
-      <p><b>Fecha:</b> ${hoy}</p>
-      ${cuerpo}
-    </body></html>`;
-
-  const blob = new Blob(['\ufeff' + html], { type: 'application/msword' });
+  const html = tablaExcel(titulo, hoy, cuerpo);
+  const blob = new Blob(['\ufeff' + html], { type: 'application/vnd.ms-excel' });
   const a = document.createElement('a');
   a.href = URL.createObjectURL(blob);
   const nombreArchivo = prov === 'todos'
-    ? `Pedido_completo_${hoy.replace(/\//g,'-')}.doc`
-    : `Pedido_${prov.replace(/[^a-zA-Z0-9]/g,'_')}_${hoy.replace(/\//g,'-')}.doc`;
+    ? `Pedido_completo_${hoy.replace(/\//g,'-')}.xls`
+    : `Pedido_${prov.replace(/[^a-zA-Z0-9]/g,'_')}_${hoy.replace(/\//g,'-')}.xls`;
   a.download = nombreArchivo;
   document.body.appendChild(a); a.click(); document.body.removeChild(a);
 }
 
-function tablaWord(items) {
-  const filas = items.map(p => `
+function filasExcel(items) {
+  return items.map(p => `
     <tr>
       <td>${p.nombre}</td>
       <td align="center">${p.unidad || '—'}</td>
@@ -932,17 +924,27 @@ function tablaWord(items) {
       <td align="center">${estadoKey(p.stock, p.minimo) === 'out' ? 'SIN STOCK' : 'STOCK BAJO'}</td>
       <td></td>
     </tr>`).join('');
-  return `<table border="1" cellspacing="0" cellpadding="6" style="border-collapse:collapse;width:100%;">
-    <tr style="background:#eee;">
-      <th align="left">Producto</th>
-      <th>Unidad</th>
-      <th>Stock actual</th>
-      <th>Mínimo</th>
-      <th>Estado</th>
-      <th>Cantidad a pedir</th>
-    </tr>
-    ${filas}
-  </table>`;
+}
+
+function tablaExcel(titulo, hoy, cuerpo) {
+  return `<html xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:x="urn:schemas-microsoft-com:office:excel" xmlns="http://www.w3.org/TR/REC-html40">
+    <head><meta charset="utf-8">
+    <!--[if gte mso 9]><xml><x:ExcelWorkbook><x:ExcelWorksheets><x:ExcelWorksheet>
+    <x:Name>Pedido</x:Name><x:WorksheetOptions><x:DisplayGridlines/></x:WorksheetOptions>
+    </x:ExcelWorksheet></x:ExcelWorksheets></x:ExcelWorkbook></xml><![endif]-->
+    </head>
+    <body>
+      <table border="1" cellspacing="0" cellpadding="6" style="border-collapse:collapse;">
+        <tr><td colspan="6" style="font-weight:bold;font-size:14pt;color:#2c5f2e;">El Sarandí — Hogar Valdense</td></tr>
+        <tr><td colspan="6" style="font-weight:bold;">${titulo}</td></tr>
+        <tr><td colspan="6"><b>Fecha:</b> ${hoy}</td></tr>
+        <tr><td></td></tr>
+        <tr style="background:#eee;font-weight:bold;">
+          <td>Producto</td><td>Unidad</td><td>Stock actual</td><td>Mínimo</td><td>Estado</td><td>Cantidad a pedir</td>
+        </tr>
+        ${cuerpo}
+      </table>
+    </body></html>`;
 }
 
 async function cargarProductos() {
@@ -24824,7 +24826,7 @@ function fyvRecalcular() {
 
 function fyvFechaTxt(iso) { if(!iso) return ''; const p=iso.split('-'); return p[2]+'/'+p[1]+'/'+p[0]; }
 
-function fyvBajarWord(dest) {
+function fyvBajarExcel(dest) {
   fyvCalcular();
   const nombre = document.getElementById(dest==='a'?'fyvProvA':'fyvProvB').value || dest.toUpperCase();
   const fecha = document.getElementById('fyvFecha').value;
@@ -24833,18 +24835,25 @@ function fyvBajarWord(dest) {
   let tot = 0;
   const filas = list.map(it => { const pu = dest==='a'?it.pa:it.pb; const sub = it.cant*pu; tot+=sub;
     return '<tr><td>'+(it.nombre||'')+'</td><td style="text-align:center">'+it.cant+'</td><td style="text-align:right">'+fyvMoney(pu)+'</td><td style="text-align:right">'+fyvMoney(sub)+'</td></tr>'; }).join('');
-  const html = '<html xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:w="urn:schemas-microsoft-com:office:word"><head><meta charset="utf-8"></head><body style="font-family:Arial">'
-    + '<h2 style="color:#2c5f2e">Pedido de frutas y verduras</h2>'
-    + '<p><b>Proveedor:</b> '+nombre+'<br><b>Fecha:</b> '+fyvFechaTxt(fecha)+'</p>'
-    + '<table border="1" cellspacing="0" cellpadding="6" style="border-collapse:collapse;width:100%">'
-    + '<tr style="background:#eee"><th align="left">Producto</th><th>Cantidad</th><th align="right">Precio unit.</th><th align="right">Subtotal</th></tr>'
+  const html = '<html xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:x="urn:schemas-microsoft-com:office:excel" xmlns="http://www.w3.org/TR/REC-html40">'
+    + '<head><meta charset="utf-8">'
+    + '<!--[if gte mso 9]><xml><x:ExcelWorkbook><x:ExcelWorksheets><x:ExcelWorksheet>'
+    + '<x:Name>Pedido FyV</x:Name><x:WorksheetOptions><x:DisplayGridlines/></x:WorksheetOptions>'
+    + '</x:ExcelWorksheet></x:ExcelWorksheets></x:ExcelWorkbook></xml><![endif]-->'
+    + '</head><body>'
+    + '<table border="1" cellspacing="0" cellpadding="6" style="border-collapse:collapse;">'
+    + '<tr><td colspan="4" style="font-weight:bold;font-size:14pt;color:#2c5f2e;">Pedido de frutas y verduras</td></tr>'
+    + '<tr><td colspan="4"><b>Proveedor:</b> '+nombre+'</td></tr>'
+    + '<tr><td colspan="4"><b>Fecha:</b> '+fyvFechaTxt(fecha)+'</td></tr>'
+    + '<tr><td></td></tr>'
+    + '<tr style="background:#eee;font-weight:bold;"><td>Producto</td><td>Cantidad</td><td>Precio unit.</td><td>Subtotal</td></tr>'
     + filas
-    + '<tr><td colspan="3" align="right"><b>Total</b></td><td align="right"><b>'+fyvMoney(tot)+'</b></td></tr>'
+    + '<tr style="font-weight:bold;"><td colspan="3" align="right">Total</td><td>'+fyvMoney(tot)+'</td></tr>'
     + '</table></body></html>';
-  const blob = new Blob(['\ufeff'+html], {type:'application/msword'});
+  const blob = new Blob(['\ufeff'+html], {type:'application/vnd.ms-excel'});
   const a = document.createElement('a');
   a.href = URL.createObjectURL(blob);
-  a.download = 'Pedido_FyV_' + nombre.replace(/[^a-zA-Z0-9]/g,'_') + '_' + (fecha||'') + '.doc';
+  a.download = 'Pedido_FyV_' + nombre.replace(/[^a-zA-Z0-9]/g,'_') + '_' + (fecha||'') + '.xls';
   document.body.appendChild(a); a.click(); document.body.removeChild(a);
 }
 
