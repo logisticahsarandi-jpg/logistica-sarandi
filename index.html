@@ -597,6 +597,7 @@ input:focus, select:focus { outline: none; border-color: #2c5f2e; }
 
 <script>
 const APPS_URL = 'https://script.google.com/macros/s/AKfycbx6MyQC27CvWdXmzOLpX0_JaoVs7aaDqkcXh53Is_Z5MfGIYtfAjDlwnObbBPdHTrwPUg/exec';
+let SESSION_TOKEN = '';
 
 const PRODUCTOS_DEMO = [
   { id:'g01', nombre:'Desodorante en aerosol Gustavo', unidad:'Unidades', stock:0, minimo:'2', categoria:'Higiene personal', proveedor:'Familia – Gustavo Schwed', baja:'0' },
@@ -637,8 +638,15 @@ async function get(action) {
 }
 
 async function post(data) {
+  if (data.action !== 'login') data.token = SESSION_TOKEN;
   const r = await fetch(APPS_URL, { method: 'POST', body: JSON.stringify(data) });
-  return await r.json();
+  const res = await r.json();
+  if (res && res.ok === false && res.error && res.error.indexOf('Sesión') !== -1) {
+    SESSION_TOKEN = '';
+    document.getElementById('loginScreen').style.display = 'flex';
+    alert('Tu sesión venció. Ingresá la contraseña de nuevo.');
+  }
+  return res;
 }
 
 function ir(sec) {
@@ -1230,13 +1238,28 @@ function irMandados() {
 }
 
 
-function verificarClave() {
+async function verificarClave() {
   const pass = document.getElementById("loginPass").value;
-  if (pass === "log2036") {
-    document.getElementById("loginScreen").style.display = "none";
-  } else {
+  const boton = document.querySelector('#loginScreen button');
+  if (boton) { boton.disabled = true; boton.textContent = 'Verificando...'; }
+  try {
+    const r = await fetch(APPS_URL, {
+      method: 'POST',
+      body: JSON.stringify({ action: 'login', pass: pass })
+    });
+    const res = await r.json();
+    if (res && res.ok) {
+      SESSION_TOKEN = res.token;
+      document.getElementById("loginScreen").style.display = "none";
+    } else {
+      document.getElementById("loginMsg").style.display = "block";
+      document.getElementById("loginPass").value = "";
+    }
+  } catch (e) {
+    document.getElementById("loginMsg").textContent = "No se pudo conectar. Revisá tu conexión.";
     document.getElementById("loginMsg").style.display = "block";
-    document.getElementById("loginPass").value = "";
+  } finally {
+    if (boton) { boton.disabled = false; boton.textContent = 'Ingresar'; }
   }
 }
 </script>
