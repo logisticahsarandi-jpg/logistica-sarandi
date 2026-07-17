@@ -630,6 +630,7 @@ async function get(action) {
     if (!r.ok) throw new Error('red');
     return await r.json();
   } catch(e) {
+    console.error('Error en get(' + action + '):', e);
     // Sin conexión — usar datos demo para prueba local
     if (action === 'getProductos') return PRODUCTOS_DEMO;
     if (action === 'getMovimientos') return [];
@@ -639,14 +640,22 @@ async function get(action) {
 
 async function post(data) {
   if (data.action !== 'login') data.token = SESSION_TOKEN;
-  const r = await fetch(APPS_URL, { method: 'POST', body: JSON.stringify(data) });
-  const res = await r.json();
-  if (res && res.ok === false && res.error && res.error.indexOf('Sesión') !== -1) {
-    SESSION_TOKEN = '';
-    document.getElementById('loginScreen').style.display = 'flex';
-    alert('Tu sesión venció. Ingresá la contraseña de nuevo.');
+  try {
+    const r = await fetch(APPS_URL, { method: 'POST', body: JSON.stringify(data) });
+    const res = await r.json();
+    if (res && res.ok === false && res.error && res.error.indexOf('Sesión') !== -1) {
+      SESSION_TOKEN = '';
+      document.getElementById('loginScreen').style.display = 'flex';
+      alert('Tu sesión venció. Ingresá la contraseña de nuevo.');
+    } else if (res && res.ok === false && res.error) {
+      alert('No se pudo guardar: ' + res.error);
+    }
+    return res;
+  } catch(e) {
+    console.error('Error en post(' + data.action + '):', e);
+    alert('No se pudo conectar con el servidor. Revisá tu conexión e intentá de nuevo.\n\nDetalle técnico: ' + e.message);
+    return { ok: false, error: 'Error de conexión' };
   }
-  return res;
 }
 
 function ir(sec) {
@@ -25128,18 +25137,19 @@ async function renderRegistro() {
 }
 
 async function toggleDia(resId, fecha) {
-  const registros = await leerREG();
-  const existe = registros.find(r => String(r.resId)===String(resId) && r.fecha===fecha);
-  if (existe) {
-    await post({ action: 'panEliminarRegistro', id: existe.id });
-    const res = (await leerRES()).find(r => String(r.id)===String(resId));
-    if (res && res.talle && res.marca) await post({ action: 'panDescontarStock', talle: res.talle, marca: res.marca });
-  } else {
-    const r = await post({ action: 'panAgregarRegistro', resId, fecha });
-    const res = (await leerRES()).find(r => String(r.id)===String(resId));
-    if (res && res.talle && res.marca) await post({ action: 'panDescontarStock', talle: res.talle, marca: res.marca });
+  const r = await post({ action: 'panToggleDia', resId, fecha });
+  if (!r || r.ok === false) return; // post() ya mostró el error si lo hubo
+
+  // Actualizamos la caché local directamente con el resultado — no hace
+  // falta volver a pedirle nada al servidor, por eso se siente instantáneo.
+  if (!_cacheREG) _cacheREG = [];
+  if (r.accion === 'agregado') {
+    _cacheREG.push({ id: r.id, resId: String(resId), fecha });
+  } else if (r.accion === 'eliminado') {
+    _cacheREG = _cacheREG.filter(x => !(String(x.resId) === String(resId) && x.fecha === fecha));
   }
-  invalidarCachePan();
+  _cacheSTK = null; // el stock cambió; se refresca solo cuando se abra esa pestaña
+
   renderRegistro();
 }
 
