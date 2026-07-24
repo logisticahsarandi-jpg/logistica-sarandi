@@ -25258,21 +25258,13 @@ async function panToggleBaja(id, darBaja) {
 // ======================================================
 async function calcularStockActual() {
   const entradas = await leerSTK();
-  const registros = await leerREG();
-  const residentes = await leerRES();
   const stock = {};
-  // leerSTK devuelve {id, talle, marca, stock} desde PanStock
+  // leerSTK devuelve {id, talle, marca, stock} desde PanStock — ese valor YA está
+  // descontado por el servidor cada vez que se marca/desmarca un día (panToggleDia).
+  // No hay que volver a restar los registros acá, o se resta dos veces.
   entradas.forEach(e => {
     const k = `${e.talle}|${e.marca}`;
-    // 'stock' es el campo del servidor; sumar si hay múltiples filas del mismo talle/marca
     stock[k] = { id:e.id, talle:e.talle, marca:e.marca, total:(stock[k]?.total||0)+parseInt(e.stock||0) };
-  });
-  registros.forEach(reg => {
-    const res = residentes.find(r=>r.id===reg.resId);
-    if (!res) return;
-    const k = `${res.talle}|${res.marca}`;
-    if (stock[k]) stock[k].total = Math.max(0, stock[k].total-1);
-    else stock[k] = { id:null, talle:res.talle, marca:res.marca, total:0 };
   });
   return Object.values(stock);
 }
