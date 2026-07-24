@@ -25036,6 +25036,7 @@ function panIrTab(tab, btn) {
 let _cacheRES = null;
 let _cacheREG = null;
 let _cacheSTK = null;
+let _cacheMOV = null;
 
 async function leerRES() {
   if (_cacheRES) return _cacheRES;
@@ -25057,7 +25058,11 @@ async function leerSTK() {
   if (_cacheSTK) return _cacheSTK;
   try { const r = await get('getPanStock'); _cacheSTK = Array.isArray(r) ? r : []; return _cacheSTK; } catch(e){ return []; }
 }
-function invalidarCachePan() { _cacheRES = null; _cacheREG = null; _cacheSTK = null; }
+async function leerMovStock() {
+  if (_cacheMOV) return _cacheMOV;
+  try { const r = await get('getPanMovimientosStock'); _cacheMOV = Array.isArray(r) ? r : []; return _cacheMOV; } catch(e){ return []; }
+}
+function invalidarCachePan() { _cacheRES = null; _cacheREG = null; _cacheSTK = null; _cacheMOV = null; }
 function uid() { return Date.now().toString(36) + Math.random().toString(36).slice(2,6); }
 function hoy() { return new Date().toISOString().slice(0,10); }
 
@@ -25336,6 +25341,7 @@ async function renderEstadisticas() {
 
   const registros  = (await leerREG()).filter(r => r.fecha>=desde && r.fecha<=hasta);
   const residentes = (await leerRES()).filter(r => String(r.baja) === '0' || !r.baja);
+  const todosRes    = await leerRES(); // incluye dados de baja, para no perder historial
   const cont = document.getElementById('estaContenido');
 
   if (!registros.length) { cont.innerHTML='<div class="empty">No hay registros en ese período.</div>'; return; }
@@ -25349,7 +25355,7 @@ async function renderEstadisticas() {
   // Consumo por talle
   const porTalle = {};
   registros.forEach(reg => {
-    const r = leerRES().find(x=>x.id===reg.resId);
+    const r = todosRes.find(x=>x.id===reg.resId);
     if (!r) return;
     const t = r.talle||'Sin talle';
     porTalle[t] = (porTalle[t]||0)+1;
@@ -25358,7 +25364,7 @@ async function renderEstadisticas() {
   // Consumo por marca
   const porMarca = {};
   registros.forEach(reg => {
-    const r = leerRES().find(x=>x.id===reg.resId);
+    const r = todosRes.find(x=>x.id===reg.resId);
     if (!r) return;
     const m = r.marca||'Sin marca';
     porMarca[m] = (porMarca[m]||0)+1;
@@ -25434,6 +25440,7 @@ async function generarExcel() {
 
   const registros  = (await leerREG()).filter(r => r.fecha>=desde && r.fecha<=hasta);
   const residentes = await leerRES();
+  const movStock    = (await leerMovStock()).filter(m => m.fecha>=desde && m.fecha<=hasta);
   const fechaHoy   = new Date().toLocaleDateString('es-UY');
 
   // Meses en rango
@@ -25506,6 +25513,12 @@ async function generarExcel() {
     + '<tr><td colspan="'+colTotal+'" style="background:#2c5f2e;color:#fff;font-weight:bold;">Resumen por marca</td></tr>'
     + '<tr style="background:#eee;font-weight:bold;"><td>Marca</td><td>Total paquetes</td></tr>'
     + filasMarca
+    + '<tr><td colspan="'+colTotal+'"></td></tr>'
+    + '<tr><td colspan="'+colTotal+'" style="background:#2c5f2e;color:#fff;font-weight:bold;">Entradas de stock en el período</td></tr>'
+    + '<tr style="background:#eee;font-weight:bold;"><td>Fecha</td><td>Talle</td><td>Marca</td><td>Cantidad</td><td colspan="'+Math.max(1,colTotal-4)+'">Observación</td></tr>'
+    + (movStock.length
+        ? movStock.map(m => '<tr><td>'+m.fecha+'</td><td align="center">'+m.talle+'</td><td align="center">'+m.marca+'</td><td align="center">'+m.cantidad+'</td><td colspan="'+Math.max(1,colTotal-4)+'">'+(m.observacion||'')+'</td></tr>').join('')
+        : '<tr><td colspan="'+colTotal+'" style="color:#888;">Sin entradas de stock registradas en el período</td></tr>')
     + '</table></body></html>';
 
   const blob = new Blob(['\ufeff'+html], {type:'application/vnd.ms-excel'});
