@@ -62,12 +62,17 @@ input:focus, select:focus { outline: none; border-color: #2c5f2e; }
 .pan-subnav.active { color:#2c5f2e;border-bottom:3px solid #2c5f2e;font-weight:600; }
 .pan-tab { display:none; }
 .pan-tab.active { display:block; }
-.pan-cal { display:grid;grid-template-columns:repeat(7,1fr);gap:3px;margin-top:8px; }
-.pan-day { border:1px solid #e0e0e0;border-radius:4px;padding:4px 2px;text-align:center;font-size:11px;cursor:pointer;background:#fff;min-height:36px;transition:background .15s; }
-.pan-day.marcado { background:#2c5f2e;color:#fff;border-color:#2c5f2e;font-weight:700; }
-.pan-day.hoy { border-color:#e67e22;border-width:2px; }
-.pan-day.futuro { opacity:.4;cursor:default; }
-.pan-day-num { font-weight:600;font-size:12px; }
+.cal-header { display:grid;grid-template-columns:repeat(7,1fr);gap:3px;margin-top:10px;font-size:11px;font-weight:600;color:#888;text-align:center; }
+.cal-grid { display:grid;grid-template-columns:repeat(7,1fr);gap:3px;margin-top:4px; }
+.cal-day { border:1px solid #e0e0e0;border-radius:4px;padding:4px 2px;text-align:center;font-size:11px;cursor:pointer;background:#fff;min-height:36px;transition:background .15s,border-color .15s; }
+.cal-day:hover:not(.futuro):not(.vacio) { background:#eef5ee;border-color:#2c5f2e; }
+.cal-day.marcado { background:#2c5f2e;color:#fff;border-color:#2c5f2e;font-weight:700; }
+.cal-day.marcado:hover { background:#244d26; }
+.cal-day.hoy { border-color:#e67e22;border-width:2px; }
+.cal-day.futuro { opacity:.4;cursor:default; }
+.cal-day.vacio { border:none;cursor:default;background:transparent; }
+.dnum { font-weight:600;font-size:12px; }
+.icon { font-size:13px;margin-top:2px; }
 .pan-res-row { display:flex;align-items:center;justify-content:space-between;padding:10px 14px;border-bottom:1px solid #f0f0f0; }
 .pan-res-row:last-child { border-bottom:none; }
 .pan-res-nombre { font-weight:600;font-size:13px;color:#222; }
@@ -626,9 +631,16 @@ document.getElementById('salFecha').value = hoy();
 
 async function get(action) {
   try {
-    const r = await fetch(APPS_URL + '?action=' + action + '&_=' + Date.now(), { cache: 'no-store' });
+    const r = await fetch(APPS_URL + '?action=' + action + '&token=' + encodeURIComponent(SESSION_TOKEN) + '&_=' + Date.now(), { cache: 'no-store' });
     if (!r.ok) throw new Error('red');
-    return await r.json();
+    const res = await r.json();
+    if (res && res.ok === false && res.error && res.error.indexOf('Sesión') !== -1) {
+      SESSION_TOKEN = '';
+      document.getElementById('loginScreen').style.display = 'flex';
+      alert('Tu sesión venció. Ingresá la contraseña de nuevo.');
+      return [];
+    }
+    return res;
   } catch(e) {
     console.error('Error en get(' + action + '):', e);
     // Sin conexión — usar datos demo para prueba local
@@ -24601,7 +24613,7 @@ async function mandCargarLocal() {
   mandDestinoCount = 0;
   let data = null;
   try {
-    const r = await fetch(APPS_URL + '?action=mandLeerBorrador&_=' + Date.now(), { cache: 'no-store' });
+    const r = await fetch(APPS_URL + '?action=mandLeerBorrador&token=' + encodeURIComponent(SESSION_TOKEN) + '&_=' + Date.now(), { cache: 'no-store' });
     if (!r.ok) throw new Error('red');
     data = await r.json();
   } catch (e) {
@@ -24869,7 +24881,7 @@ function fyvBajarExcel(dest) {
 // Trae las semanas desde Google Sheets; si falla la red, usa el último respaldo local
 async function fyvListarSemanasNube() {
   try {
-    const r = await fetch(APPS_URL + '?action=fyvListarSemanas&_=' + Date.now(), { cache: 'no-store' });
+    const r = await fetch(APPS_URL + '?action=fyvListarSemanas&token=' + encodeURIComponent(SESSION_TOKEN) + '&_=' + Date.now(), { cache: 'no-store' });
     if (!r.ok) throw new Error('red');
     const data = await r.json();
     try { localStorage.setItem(FYV_KEY, JSON.stringify(data)); } catch (e) {}
@@ -25431,51 +25443,75 @@ async function generarExcel() {
   while (cur<=fin) { meses.push(cur.toISOString().slice(0,7)); cur=new Date(cur.getFullYear(),cur.getMonth()+1,1); }
 
   const activos = residentes.filter(r => String(r.baja) === '0' || !r.baja);
+  const multiMes = meses.length > 1;
+  const colTotal = multiMes ? (4 + meses.length + 1) : 5;
 
-  let csv = '\uFEFF';
-  csv += `El Sarandí Hogar Valdense — Logística\n`;
-  csv += `Informe de consumo de pañales\n`;
-  csv += `Período: ${desde} al ${hasta}\n`;
-  csv += `Generado: ${fechaHoy}\n\n`;
-
-  if (meses.length>1) {
-    csv += `Nombre,Talle,Marca,Asignados/mes,${meses.join(',')},Total período\n`;
+  let filasDatos = '';
+  if (multiMes) {
     activos.forEach(r => {
       const total = registros.filter(x=>x.resId===r.id).length;
       if (!total) return;
       const porMes = meses.map(m => registros.filter(x=>x.resId===r.id&&x.fecha.startsWith(m)).length);
-      csv += `"${r.nombre}","${r.talle||''}","${r.marca||''}",${r.asignados||0},${porMes.join(',')},${total}\n`;
+      filasDatos += '<tr><td>'+r.nombre+'</td><td align="center">'+(r.talle||'')+'</td><td align="center">'+(r.marca||'')+'</td><td align="center">'+(r.asignados||0)+'</td>'
+        + porMes.map(n=>'<td align="center">'+n+'</td>').join('')
+        + '<td align="center">'+total+'</td></tr>';
     });
+    if (!filasDatos) filasDatos = '<tr><td colspan="'+colTotal+'" style="color:#888;">Sin consumo registrado en el período</td></tr>';
   } else {
-    csv += `Nombre,Talle,Marca,Asignados/mes,Paquetes consumidos\n`;
     activos.forEach(r => {
       const total = registros.filter(x=>x.resId===r.id).length;
-      csv += `"${r.nombre}","${r.talle||''}","${r.marca||''}",${r.asignados||0},${total}\n`;
+      filasDatos += '<tr><td>'+r.nombre+'</td><td align="center">'+(r.talle||'')+'</td><td align="center">'+(r.marca||'')+'</td><td align="center">'+(r.asignados||0)+'</td><td align="center">'+total+'</td></tr>';
     });
   }
 
-  csv += `\nResumen por talle\n`;
-  csv += `Talle,Total paquetes\n`;
   const porTalle = {};
   registros.forEach(reg => {
     const r = residentes.find(x=>x.id===reg.resId);
     if (r) porTalle[r.talle||'Sin talle'] = (porTalle[r.talle||'Sin talle']||0)+1;
   });
-  Object.entries(porTalle).forEach(([t,n]) => { csv += `"${t}",${n}\n`; });
+  const filasTalle = Object.entries(porTalle).map(([t,n]) => '<tr><td>'+t+'</td><td align="center">'+n+'</td></tr>').join('')
+    || '<tr><td colspan="2" style="color:#888;">Sin datos en el período</td></tr>';
 
-  csv += `\nResumen por marca\n`;
-  csv += `Marca,Total paquetes\n`;
   const porMarca = {};
   registros.forEach(reg => {
     const r = residentes.find(x=>x.id===reg.resId);
     if (r) porMarca[r.marca||'Sin marca'] = (porMarca[r.marca||'Sin marca']||0)+1;
   });
-  Object.entries(porMarca).forEach(([m,n]) => { csv += `"${m}",${n}\n`; });
+  const filasMarca = Object.entries(porMarca).map(([m,n]) => '<tr><td>'+m+'</td><td align="center">'+n+'</td></tr>').join('')
+    || '<tr><td colspan="2" style="color:#888;">Sin datos en el período</td></tr>';
 
-  const blob = new Blob([csv], {type:'text/csv;charset=utf-8;'});
+  const encabezado = multiMes
+    ? '<tr style="background:#eee;font-weight:bold;"><td>Nombre</td><td>Talle</td><td>Marca</td><td>Asignados/mes</td>'+meses.map(m=>'<td>'+m+'</td>').join('')+'<td>Total período</td></tr>'
+    : '<tr style="background:#eee;font-weight:bold;"><td>Nombre</td><td>Talle</td><td>Marca</td><td>Asignados/mes</td><td>Paquetes consumidos</td></tr>';
+
+  const html = '<html xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:x="urn:schemas-microsoft-com:office:excel" xmlns="http://www.w3.org/TR/REC-html40">'
+    + '<head><meta charset="utf-8">'
+    + '<!--[if gte mso 9]><xml><x:ExcelWorkbook><x:ExcelWorksheets><x:ExcelWorksheet>'
+    + '<x:Name>Pañales</x:Name><x:WorksheetOptions><x:DisplayGridlines/></x:WorksheetOptions>'
+    + '</x:ExcelWorksheet></x:ExcelWorksheets></x:ExcelWorkbook></xml><![endif]-->'
+    + '</head><body>'
+    + '<table border="1" cellspacing="0" cellpadding="6" style="border-collapse:collapse;">'
+    + '<tr><td colspan="'+colTotal+'" style="font-weight:bold;font-size:14pt;color:#2c5f2e;">El Sarandí — Hogar Valdense</td></tr>'
+    + '<tr><td colspan="'+colTotal+'" style="font-weight:bold;">Informe de consumo de pañales</td></tr>'
+    + '<tr><td colspan="'+colTotal+'">Período: '+desde+' al '+hasta+'</td></tr>'
+    + '<tr><td colspan="'+colTotal+'">Generado: '+fechaHoy+'</td></tr>'
+    + '<tr><td colspan="'+colTotal+'"></td></tr>'
+    + encabezado
+    + filasDatos
+    + '<tr><td colspan="'+colTotal+'"></td></tr>'
+    + '<tr><td colspan="'+colTotal+'" style="background:#2c5f2e;color:#fff;font-weight:bold;">Resumen por talle</td></tr>'
+    + '<tr style="background:#eee;font-weight:bold;"><td>Talle</td><td>Total paquetes</td></tr>'
+    + filasTalle
+    + '<tr><td colspan="'+colTotal+'"></td></tr>'
+    + '<tr><td colspan="'+colTotal+'" style="background:#2c5f2e;color:#fff;font-weight:bold;">Resumen por marca</td></tr>'
+    + '<tr style="background:#eee;font-weight:bold;"><td>Marca</td><td>Total paquetes</td></tr>'
+    + filasMarca
+    + '</table></body></html>';
+
+  const blob = new Blob(['\ufeff'+html], {type:'application/vnd.ms-excel'});
   const a = document.createElement('a');
   a.href = URL.createObjectURL(blob);
-  a.download = `Control_Panales_${desde}_${hasta}.csv`;
+  a.download = `Control_Panales_${desde}_${hasta}.xls`;
   document.body.appendChild(a); a.click(); document.body.removeChild(a);
 }
 
