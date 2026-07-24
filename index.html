@@ -25457,7 +25457,7 @@ async function generarExcel() {
 
   const registros  = (await leerREG()).filter(r => r.fecha>=desde && r.fecha<=hasta);
   const residentes = await leerRES();
-  const movStock    = (await leerMovStock()).filter(m => m.fecha>=desde && m.fecha<=hasta);
+  const movStock    = (await leerMovStock()).filter(m => m.fecha>=desde && m.fecha<=hasta && parseInt(m.cantidad) > 0);
   const stockActual = await calcularStockActual();
   const fechaHoy   = new Date().toLocaleDateString('es-UY');
 
